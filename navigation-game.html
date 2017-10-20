@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+  <head>
+  	<meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <style>
+      #mymap {width: 350px;	height: 350px;}
+    </style>
+  </head>
+  <body>
+    <h3>McK drive from Museum to Airport </h3>
+    <div id="mymap"></div>   
+    <button onclick = "window.location.reload()"> Restart trip </button>
+    <script>
+    	var markerA, markerB, line;
+	   
+		var map;
+		var myrendererOptions = {draggable: true, suppressInfoWindows: true, suppressMarkers: true, preserveViewport: true};
+		var legs;
+		var lanechange = 0;
+		var toggled = 0;
+
+		// Set mobile-browser-friendly configuration for android and iPhone
+		function detectBrowser() {
+			var useragent = navigator.userAgent;
+			var mapdiv = document.getElementById('mymap');
+
+			if (useragent.indexOf('iPhone') != -1 || useragent.indexOf('Android') != -1 ) {
+				mapdiv.style.width = '100%';
+			    mapdiv.style.height = '100%';
+			}
+			else {
+			    mapdiv.style.width = '350px';
+			    mapdiv.style.height = '350px';
+			}
+		}
+
+		//Entry point
+		function initMap() {
+
+			//Initialize all parameters
+		 	var directionsDisplay = new google.maps.DirectionsRenderer(myrendererOptions);
+			var directionsService = new google.maps.DirectionsService();
+			var locA = new google.maps.LatLng(13.070767, 80.257245);
+			var locB = new google.maps.LatLng(12.995712, 80.171401);
+			var bounds = new google.maps.LatLngBounds();
+			var infowindowA = new google.maps.InfoWindow({content: 'Museum Theatre'});
+			var infowindowB = new google.maps.InfoWindow({content: 'Airport'});
+
+			bounds.extend(locA);
+			bounds.extend(locB);
+		    map = new google.maps.Map(document.getElementById('mymap'));
+		    map.setCenter(bounds.getCenter());
+		    directionsDisplay.setMap(map);
+
+		    markerA = new google.maps.Marker({position: locA, map: map});
+		    markerB = new google.maps.Marker({position: locB, map: map});
+		    line = new google.maps.Polyline({path: [], strokeColor: 'blue', map: map});
+
+		   	google.maps.event.addListener(markerA, 'click', function () {infowindowA.open(map, markerA);});
+		    google.maps.event.addListener(markerB, 'click', function () {infowindowB.open(map, markerB);});
+		   	map.fitBounds(bounds);
+
+			var car = new google.maps.Marker({
+				icon: {path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: 'black', fillOpacity:1.0, strokeColor: 'black'},
+				map: map,
+				position: locA
+			});
+			car.setMap(map);
+			
+			//Compute the route between A and B
+		    calculateAndDisplayRoute(car, directionsService, directionsDisplay, locA, locB, line);
+		}
+
+		function calculateAndDisplayRoute(car, directionsService, directionsDisplay,locA, locB, line){
+			var request = {
+		        origin: locA,
+		        destination: locB,
+		        optimizeWaypoints: true,
+		        travelMode: 'DRIVING'
+		    };		
+	    	directionsService.route(request, function (response, status) {
+	        	if (status == google.maps.DirectionsStatus.OK) {
+	            	//directionsDisplay.setDirections(response);
+	            	legs = response.routes[0].legs;
+    				for (i=0; i<legs.length; i++) {
+						var steps = legs[i].steps;
+						for (j=0; j<steps.length; j++) {
+							var nextSegment = steps[j].path;
+						    for (k=0; k<nextSegment.length; k++) {
+						    	line.getPath().push(nextSegment[k]);
+						    }
+						}
+					}
+
+					// Navigate the car along the computed route between A and B
+    				navigate(car, line, directionsService, directionsDisplay, locA, locB);
+    			}
+	   	 	});
+		}
+
+      	function navigate(car, line, directionsService, directionsDisplay, start, end) {
+      		var car_pos;
+      		var count = 0;
+      		var r = 0;
+      		var test_routes = [];
+      		var new_line = new google.maps.Polyline({
+				path: [],
+				strokeColor: 'black',
+				map: map
+			});
+ 			var curr_line = line;
+
+ 			// Generate a random block
+      		function generateBlock() {
+      			
+      			//var rndLeg = Math.floor(Math.random()*(legs.length));
+				//var steps = legs[rndLeg].steps;
+
+				//Randomize the location of the block somewhere after the 6th step in the current route
+				var steps = legs[0].steps;
+				var rndStep = 6+Math.floor(Math.random()*(steps.length-10));
+				var paths = steps[rndStep].path;
+				var rndLoc = Math.floor(Math.random()*(paths.length));
+				var rndBlock = paths[rndLoc];
+	     		var rectangle = new google.maps.Rectangle({
+	    			strokeColor: 'darkred',
+				    strokeOpacity: 1,
+				    strokeWeight: 2,
+				    fillColor: 'darkred',
+				    fillOpacity: 1,
+				    map: map,
+				    bounds: {
+				      	north: rndBlock.lat()+0.001,
+				      	south: rndBlock.lat()-0.001,
+				      	east: rndBlock.lng()+0.001,
+				      	west: rndBlock.lng()-0.001
+				    }
+		 		});
+
+
+		 		//Detect whether the block is on the current route. If so, re-route
+		 		if(google.maps.geometry.poly.isLocationOnEdge(rndBlock, line, 10e-4)){
+		 			var new_request = {
+		        		origin: new google.maps.LatLng(car.getPosition().lat(), car.getPosition().lng())	,
+		        		destination: end,
+		        		provideRouteAlternatives: true, //Get all alternative routes
+		        		optimizeWaypoints: true,
+		        		travelMode: 'DRIVING'
+		    		};
+		    		directionsService.route(new_request, function (response, status) {
+	        			if (status == google.maps.DirectionsStatus.OK) {
+	        				//directionsDisplay.setDirections(response);
+				 			for(l=0;l<response.routes.length;l++){
+				 				var test_route = new google.maps.Polyline({
+									path: [],
+									strokeColor: 'darkblue',
+									map: map
+								});
+				 				legs = response.routes[l].legs;
+		    					for (i=0; i<legs.length; i++) {
+									var steps = legs[i].steps;
+									for (j=0; j<steps.length; j++) {
+										var nextSegment = steps[j].path;
+								    	for (k=0; k<nextSegment.length; k++) {
+								    		test_route.getPath().push(nextSegment[k]);
+						    			}
+						    		}
+						    	}
+						    	test_routes.push(test_route);
+						    	test_route.setMap(null);
+							}
+						}
+
+						// Check if the chosen alternative route does not contain the block. If so, choose another route.
+						while(r<test_routes.length && google.maps.geometry.poly.isLocationOnEdge(rndBlock, test_routes[r], 10e-4)){
+							r = r+1;
+						}
+						if(r<test_routes.length){
+							new_line = test_routes[r];
+							lanechange = 1;
+						}
+						// No alternate routes were found
+						else{
+							alert ('Too late. Alternate routes closed. Brace yourself for the crash!');
+						}
+					});
+    			}
+			};
+
+			//Generate the random block 3 seconds after starting point.
+			setTimeout(function(){ generateBlock(); }, 3000);
+
+			//Simulate moving car from A to B. If roadblock appears, re-route and continue simulate
+          	setInterval(function() {
+          		if(lanechange == 1 && toggled == 0){
+          			curr_line = new_line;
+          			count = 0;
+          			toggled = 1;
+          			new_line.setMap(map);
+
+          		}
+          		if(count < curr_line.getPath().getLength()){
+	          		car_pos = curr_line.getPath().getAt(count);
+	          		count = count + 1;
+	          	}
+	            car.setPosition(car_pos);
+        	}, 25, line, new_line);
+    	}
+	</script>
+    <script async defer src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyAgC2vqM2pYua0GWhcE-VhB5FJcEb4Sghg&callback=initMap">
+    </script>
+  </body>
+</html>
